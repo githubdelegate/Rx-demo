@@ -30,8 +30,6 @@ class RxMKMapViewDelegateProxy: DelegateProxy<MKMapView, MKMapViewDelegate> , De
     static func registerKnownImplementations() {
         register { RxMKMapViewDelegateProxy(mapView: $0) }
     }
-    
-    
 }
 
 public extension Reactive where Base: MKMapView {
@@ -49,5 +47,13 @@ public extension Reactive where Base: MKMapView {
             mapView.removeOverlays(mapView.overlays)
             mapView.addOverlays([overlay])
         }
+    }
+    
+    var regionDidChangeAnimated: ControlEvent<Bool> {
+        let source = delegate.methodInvoked(#selector(MKMapViewDelegate.mapView(_:regionDidChangeAnimated:))).map { pa  -> Bool in
+            print("delegate  region chang")
+            return (pa[1] as? Bool) ?? false
+        }
+        return ControlEvent(events: source)
     }
 }

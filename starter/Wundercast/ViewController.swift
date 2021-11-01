@@ -60,14 +60,30 @@ class ViewController: UIViewController {
                   .catchAndReturn(.empty)}
       
       
-      let geoSearch = locBtn.rx.tap.flatMapLatest { _ in
-          self.locationMgr.rx.getCurrentLocation()
-      }.flatMapLatest { loc in
-          ApiController.shared.currentWeather(at: loc.coordinate).catchAndReturn(.empty)
+      
+      let mapInput = mapView.rx.regionDidChangeAnimated.skip(1).takeLast(1).map { _ -> CLLocation in
+          print(" did change region =  ")
+         return  CLLocation(latitude: self.mapView.centerCoordinate.latitude, longitude: self.mapView.centerCoordinate.longitude)
       }
       
+      let geoInput = locBtn.rx.tap.flatMapLatest { _ in
+          self.locationMgr.rx.getCurrentLocation()
+      }
       
-      let search = Observable.merge(geoSearch, txtsearch).asDriver(onErrorJustReturn: .empty)
+      let geoSearch =  Observable.merge(mapInput, geoInput).flatMapLatest { location in
+          ApiController.shared.currentWeather(at: location.coordinate).catchAndReturn(.empty)
+      }      
+  
+      
+      let search = Observable.merge(geoSearch, txtsearch).retry(when: { e in
+          e.enumerated().flatMap { (attempt, error) -> Observable<Int> in
+              if attempt >= 4 - 1 {
+                  return Observable.error(error)
+              }
+              
+              return Observable<Int>.timer(.seconds(attempt + 1), scheduler: MainScheduler.instance)
+          }
+      }).asDriver(onErrorJustReturn: .empty)
       
       search.map { "\($0.temperature) C"}.drive(tempLabel.rx.text).disposed(by: bag)
       search.map(\.icon).drive(iconLabel.rx.text).disposed(by: bag)
@@ -75,7 +91,11 @@ class ViewController: UIViewController {
       search.map{ "\($0.humidity) %" }.drive(humidityLabel.rx.text).disposed(by: bag)
       
       // 只要用户输入完成 就开始加载动画， 返回true， 请求结果完成就隐藏动画 false
-      let running = Observable.merge(searchInput.map{ _ in true }, locBtn.rx.tap.map({ _ in true }) ,search.map{ _ in false }.asObservable())
+      let running = Observable.merge(
+        searchInput.map{ _ in true },
+        geoInput.map({ _ in true }),
+        mapInput.map({ _ in true }),
+        search.map{ _ in false }.asObservable())
           .startWith(true)
           .asDriver(onErrorJustReturn: false)
       
